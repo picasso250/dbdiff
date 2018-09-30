@@ -2,7 +2,7 @@
 compare database structure between different environment
 
 - only support mysql
-- only support column change
+- only support column change and table comment change
 
 ## Usage
 
