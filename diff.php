@@ -6,6 +6,9 @@
  * Time: 下午1:40
  */
 
+// Create new Colors class
+$colors = new Colors();
+
 $file = ".env";
 $config = parse_ini_file($file, true);
 $pdo = null;
@@ -15,6 +18,11 @@ $pdo = null;
 if ($argc != 3) {
     echo "USAGE: $argv[0] from to\n";
     exit;
+}
+
+$ignore_tables = [];
+if(getenv('IGNORE')) {
+    $ignore_tables = explode(",", getenv('IGNORE'));
 }
 
 $a = db_def($argv[1]);
@@ -27,7 +35,8 @@ foreach ($c as $table_name => $def) {
 
 $it = array_intersect_key($a, $b);
 foreach ($it as $table_name => $_) {
-    echo "-- # $table_name\n";
+    if(in_array($table_name, $ignore_tables)) continue;
+    // echo "-- # $table_name\n";
     $ta = $a[$table_name];
     $tb = $b[$table_name];
 
@@ -35,19 +44,24 @@ foreach ($it as $table_name => $_) {
         echo "pkey change from $ta[pkey] to $tb[pkey]\n";
     }
     if($ta['comment']!==$tb['comment']) {
-        echo "comment change from $ta[comment] to $tb[comment]\n";
+        echo "-- comment change from ".$colors->getColoredString($ta['comment'],'red')." to ".$colors->getColoredString($tb['comment'],'green')."\n";
+        echo "ALTER TABLE `$table_name` {$tb['comment']};\n";
+    }
+
+    if($ta['modifier']!==$tb['modifier']) {
+        echo "modifier change from $ta[modifier] to $tb[modifier]\n";
     }
 
     $col_add = array_diff_key($tb['column'], $ta['column']);
     foreach ($col_add  as $ca => $_) {
-        echo "-- add col $ca {$tb['column'][$ca]}\n";
-        echo "alter table `$table_name` add column `$col` {$tb['column'][$ca]};\n";
+        echo "-- add column $ca ".$colors->getColoredString($tb['column'][$ca],"green")."\n";
+        echo "ALTER TABLE `$table_name` add column `$col` {$tb['column'][$ca]};\n";
     }
 
     $_it = array_intersect_key($ta['column'], $tb['column']);
     foreach ($_it as $col => $_) {
         if ($ta['column'][$col]!=$tb['column'][$col]) {
-            echo "-- col change from {$ta['column'][$col]} to {$tb['column'][$col]}\n";
+            echo "-- column change ".$colors->getColoredString($ta['column'][$col],'red')." => ".$colors->getColoredString($tb['column'][$col], "green") . "\n";
             echo "ALTER TABLE `$table_name` CHANGE COLUMN `$col` `$col` {$tb['column'][$col]};\n";
         }
     }
@@ -119,11 +133,15 @@ function table_def($cols_s, $c) {
             exit(1);
         }
     }
+    if(!preg_match('/^(.+?)( COMMENT=\'.+\')?$/', $c, $m)) {
+        die("$c parse error");
+    }
     return [
         'pkey' => $pkey,
         'column' => $columns,
         'index' => $indexs,
-        'comment' => preg_replace('/ AUTO_INCREMENT=\d+/', '', trim($c)),
+        'modifier' => preg_replace('/ AUTO_INCREMENT=\d+/', '', trim($m[1])),
+        'comment' => isset($m[2]) ? $m[2] :'',
     ];
 }
 
@@ -175,4 +193,67 @@ function fetchAll($sql, $vars = []) {
 function fetch($sql, $vars=[]) {
     $a = fetchAll($sql, $vars);
     return $a ? $a[0] : $a;
+}
+
+class Colors {
+    private $foreground_colors = array();
+    private $background_colors = array();
+
+    public function __construct() {
+        // Set up shell colors
+        $this->foreground_colors['black'] = '0;30';
+        $this->foreground_colors['dark_gray'] = '1;30';
+        $this->foreground_colors['blue'] = '0;34';
+        $this->foreground_colors['light_blue'] = '1;34';
+        $this->foreground_colors['green'] = '0;32';
+        $this->foreground_colors['light_green'] = '1;32';
+        $this->foreground_colors['cyan'] = '0;36';
+        $this->foreground_colors['light_cyan'] = '1;36';
+        $this->foreground_colors['red'] = '0;31';
+        $this->foreground_colors['light_red'] = '1;31';
+        $this->foreground_colors['purple'] = '0;35';
+        $this->foreground_colors['light_purple'] = '1;35';
+        $this->foreground_colors['brown'] = '0;33';
+        $this->foreground_colors['yellow'] = '1;33';
+        $this->foreground_colors['light_gray'] = '0;37';
+        $this->foreground_colors['white'] = '1;37';
+
+        $this->background_colors['black'] = '40';
+        $this->background_colors['red'] = '41';
+        $this->background_colors['green'] = '42';
+        $this->background_colors['yellow'] = '43';
+        $this->background_colors['blue'] = '44';
+        $this->background_colors['magenta'] = '45';
+        $this->background_colors['cyan'] = '46';
+        $this->background_colors['light_gray'] = '47';
+    }
+
+    // Returns colored string
+    public function getColoredString($string, $foreground_color = null, $background_color = null) {
+        $colored_string = "";
+
+        // Check if given foreground color found
+        if (isset($this->foreground_colors[$foreground_color])) {
+            $colored_string .= "\033[" . $this->foreground_colors[$foreground_color] . "m";
+        }
+        // Check if given background color found
+        if (isset($this->background_colors[$background_color])) {
+            $colored_string .= "\033[" . $this->background_colors[$background_color] . "m";
+        }
+
+        // Add string and end coloring
+        $colored_string .=  $string . "\033[0m";
+
+        return $colored_string;
+    }
+
+    // Returns all foreground color names
+    public function getForegroundColors() {
+        return array_keys($this->foreground_colors);
+    }
+
+    // Returns all background color names
+    public function getBackgroundColors() {
+        return array_keys($this->background_colors);
+    }
 }
